@@ -22,14 +22,20 @@ To install AutoCor, follow these steps:
 Here are some example commands you can use with AutoCor:
 
 Accepts auto-translate terms, not case-sensitive.
+
      `//cor [on|off]`
+
      `//cor roll <n> <job|roll_name>`  -- set roll
+
      `//cor cc [n|off]`                -- Use crooked cards on roll [n] (default is 1st roll, 0 is off)
+
      `//cor aoe <slot|party> [on|off]` -- Set party slots to monitor for aoe range.
+
      `//cor save`                      -- save settings on per character basis
+
      `//cor flip`                      -- Flip Roll 1 and Roll 2
         
-    when setting rolls with commands it will check <job/roll_name> against the rolls job,
+    When setting rolls with commands it will check <job/roll_name> against the rolls job,
     next checks if a roll name is or begins with <job/roll_name>.
     
         [n] is roll order
