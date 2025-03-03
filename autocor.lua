@@ -157,7 +157,7 @@ windower.register_event('prerender',function ()
         local play = windower.ffxi.get_player()
         if not play or play.main_job ~= 'COR' or play.status > 1 then return end
         local abil_recasts = windower.ffxi.get_ability_recasts()
-        if buffs[16] or buffs[69] is_moving or not aoe_range() then return end
+        if buffs[16] or buffs[69] or is_moving or not aoe_range() then return end
         if buffs[309] then
             if abil_recasts[198] and abil_recasts[198] == 0 then
                 use_JA('/ja "Fold" <me>')
