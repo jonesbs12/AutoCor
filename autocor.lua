@@ -33,7 +33,13 @@ default = {
     roll = L{'Ninja Roll','Corsair\'s Roll'},
     active = true,
     crooked_cards = 1,
-    text = {text = {size=10}},
+    text = {
+        text = {size=10},
+        padding = 10,  -- Add padding property
+        pos = {x = 0, y = 0},  -- Position of the text box
+        bg = {alpha = 200, red = 0, green = 0, blue = 0},  -- Background color
+        flags = {draggable = true},  -- Make the text box draggable
+    },
     autora = true,
     aoe = {['p1'] = true,['p2'] = true,['p3'] = true,['p4'] = true,['p5'] = true},                    
     }
@@ -124,13 +130,13 @@ function get_party_member_slot(name)
 end
 
 local display_box = function()
-    local str = '\n AoE:'
+    local str = '\n \\cs(255,255,0)AoE:\\cr'
     for slot in party_slots:it() do
         local name = (windower.ffxi.get_mob_by_target(slot) or {name=''}).name
 
-        str = str..'\n <%s> [%s] %s':format(slot, settings.aoe[slot] and 'On' or 'Off', name)
+        str = str..'\n <%s> [%s] %s':format(slot, settings.aoe[slot] and '\\cs(75,255,75)On\\cr' or '\\cs(255,75,75)Off\\cr', name)
     end
-    return 'AutoCOR [O%s]\nRoll 1 [%s]\nRoll 2 [%s]':format(actions and 'n' or 'ff',settings.roll[1],settings.roll[2]) .. str
+    return 'AutoCOR [%s]\n\\cs(100,200,255)Roll 1\\cr [%s]\n\\cs(100,200,255)Roll 2\\cr [%s]\n':format(actions and '\\cs(0,255,0)On\\cr' or '\\cs(255,0,0)Off\\cr',settings.roll[1],settings.roll[2]) .. str
 end
 
 cor_status = texts.new(display_box(),settings.text,setting)
@@ -236,6 +242,14 @@ windower.register_event('addon command', function(...)
                 end
             end
         end
+    elseif commands[1] == 'aoe' and (commands[2] == 'all' or commands[2] == 'party') then
+        local state = commands[3] == 'on' and true or commands[3] == 'off' and false
+        if state ~= nil then
+            for _, slot in ipairs(party_slots) do
+                settings.aoe[slot] = state
+            end
+            windower.add_to_chat(207, 'All slots are now %s':format(state and 'on' or 'off'))
+        end
     elseif commands[1] == 'aoe' and commands[2] then
         local slot = tonumber(commands[2], 6, 0) or commands[2]:match('[1-5]')
         slot = slot and 'p' .. slot or get_party_member_slot(commands[2])
@@ -254,7 +268,7 @@ windower.register_event('addon command', function(...)
             windower.add_to_chat(207, 'Will now ensure <%s> is in AoE range.':format(slot))
         else
             windower.add_to_chat(207, 'Ignoring slot <%s>':format(slot))
-        end
+        end    
     elseif commands[1] == 'save' then
         settings:save()
         windower.add_to_chat(207, 'Settings saved.')
