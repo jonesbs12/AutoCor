@@ -129,6 +129,9 @@ function get_party_member_slot(name)
     end
 end
 
+-- Add a table to store the current roll values
+local current_rolls = {}
+
 local display_box = function()
     local str = '\n \\cs(255,255,0)AoE:\\cr'
     for slot in party_slots:it() do
@@ -136,16 +139,24 @@ local display_box = function()
 
         str = str..'\n <%s> [%s] %s':format(slot, settings.aoe[slot] and '\\cs(75,255,75)On\\cr' or '\\cs(255,75,75)Off\\cr', name)
     end
-    return 'AutoCOR [%s]\n\\cs(100,200,255)Roll 1\\cr [%s]\n\\cs(100,200,255)Roll 2\\cr [%s]\n':format(actions and '\\cs(0,255,0)On\\cr' or '\\cs(255,0,0)Off\\cr',settings.roll[1],settings.roll[2]) .. str
+
+    local roll1_value = current_rolls[settings.roll[1]] or '0'
+    local roll2_value = current_rolls[settings.roll[2]] or '0'
+
+    return 'AutoCOR [%s]\n\\cs(100,200,255)Roll 1\\cr \\cs(255,255,0)[\\cr%s\\cs(255,255,0)]\\cr \\cs(255,255,0)[\\cr%s\\cs(255,255,0)]\\cr\n\\cs(100,200,255)Roll 2\\cr \\cs(255,255,0)[\\cr%s\\cs(255,255,0)]\\cr \\cs(255,255,0)[\\cr%s\\cs(255,255,0)]\\cr\n':format(
+        actions and '\\cs(0,255,0)On\\cr' or '\\cs(255,0,0)Off\\cr',
+        settings.roll[1], roll1_value,
+        settings.roll[2], roll2_value
+    ) .. str
 end
 
-cor_status = texts.new(display_box(),settings.text,setting)
+cor_status = texts.new(display_box(), settings.text, setting)
 cor_status:show()
 
 last_coords = 'fff':pack(0,0,0)
 is_moving = false
 
-windower.register_event('outgoing chunk',function(id,data,modified,is_injected,is_blocked)
+windower.register_event('outgoing chunk', function(id, data, modified, is_injected, is_blocked)
     if id == 0x015 then
         is_moving = last_coords ~= modified:sub(5, 16)
         last_coords = modified:sub(5, 16)
@@ -153,7 +164,7 @@ windower.register_event('outgoing chunk',function(id,data,modified,is_injected,i
 end)
 
 local snake_eye_used = false
-windower.register_event('prerender',function ()
+windower.register_event('prerender', function()
     cor_status:text(display_box())
     if not actions then return end
     local curtime = os.clock()
@@ -170,8 +181,8 @@ windower.register_event('prerender',function ()
             end
             return
         end
-        for x = 1,2 do
-            local roll = rolls:with('en',settings.roll[x])
+        for x = 1, 2 do
+            local roll = rolls:with('en', settings.roll[x])
             if not buffs[roll.buff] then
                 if abil_recasts[193] == 0 then
                     if x == settings.crooked_cards and abil_recasts[96] and abil_recasts[96] == 0 then
@@ -182,7 +193,7 @@ windower.register_event('prerender',function ()
                 end
                 return
             elseif buffs[308] and buffs[308] == roll.id and buffs[roll.buff] ~= roll.lucky and buffs[roll.buff] ~= 11 then
-                if abil_recasts[197] and abil_recasts[197] == 0 and not buffs[357] and L{roll.lucky-1,10,roll.unlucky > 6 and roll.unlucky}:contains(buffs[roll.buff]) and not snake_eye_used then
+                if abil_recasts[197] and abil_recasts[197] == 0 and not buffs[357] and L{roll.lucky-1, 10, roll.unlucky > 6 and roll.unlucky}:contains(buffs[roll.buff]) and not snake_eye_used then
                     use_JA('/ja "Snake Eye" <me>')
                     snake_eye_used = true
                 elseif abil_recasts[194] and abil_recasts[194] == 0 and (buffs[357] or buffs[roll.buff] < 7) then
@@ -194,6 +205,70 @@ windower.register_event('prerender',function ()
         end
     end
 end)
+
+-- Update the incoming chunk event to capture the roll values
+windower.register_event('incoming chunk', function(id, data, modified, is_injected, is_blocked)
+    if id == 0x028 then
+        if data:unpack('I', 6) ~= windower.ffxi.get_mob_by_target('me').id then return false end
+        local category, param = data:unpack('b4b16', 11, 3)
+        local recast, targ_id = data:unpack('b32b32', 15, 7)
+        local effect, message = data:unpack('b17b10', 27, 6)
+        if category == 6 then  -- Use Job Ability
+            if message == 420 then  -- Phantom Roll
+                buffs[rolls[param].buff] = effect
+                buffs[308] = param
+                current_rolls[rolls[param].en] = effect  -- Capture the roll value
+            elseif message == 424 then  -- Double-Up
+                buffs[rolls[param].buff] = effect
+                current_rolls[rolls[param].en] = effect  -- Capture the roll value
+            elseif message == 426 then  -- Bust
+                buffs[rolls[param].buff] = nil
+                buffs[309] = param
+                current_rolls[rolls[param].en] = 'Bust'  -- Indicate a bust
+            end
+        elseif category == 4 then  -- Finish Casting
+            del = 4.2
+            is_casting = false
+        elseif finish_act:contains(category) then  -- Finish Range/WS/Item Use
+            is_casting = false
+        elseif start_act:contains(category) then
+            del = category == 7 and recast or 1
+            if param == 24931 then  -- Begin Casting/WS/Item/Range
+                is_casting = true
+            elseif param == 28787 then  -- Failed Casting/WS/Item/Range
+                is_casting = false
+            end
+        end
+    elseif id == 0x63 and data:byte(5) == 9 then
+        local set_buff = {}
+        for n = 1, 32 do
+            local buff = data:unpack('H', n * 2 + 7)
+            if buff == 255 then break end
+            if (buff >= 308 and buff <= 339) or (buff == 600) then
+                set_buff[buff] = buffs[buff] and buffs[buff] or 11
+            else
+                set_buff[buff] = (set_buff[buff] or 0) + 1
+            end
+        end
+        buffs = set_buff
+    end
+end)
+
+function reset()
+    actions = false
+    is_casting = false
+    buffs = {}
+end
+
+function status_change(new, old)
+    --is_casting = false
+    if new > 1 and new < 4 then
+        reset()
+    end
+end
+
+windower.register_event('status change', status_change)
+windower.register_event('zone change', 'job change', 'logout', reset)
 
 local function print_help()
     local help_text = [[
@@ -227,17 +302,17 @@ windower.register_event('addon command', function(...)
         commands[2] = commands[2] and tonumber(commands[2])
         if commands[2] and commands[3] then
             commands[3] = windower.convert_auto_trans(commands[3])
-            for x = 3,#commands do commands[x] = commands[x]:ucfirst() end
-            commands[3] = table.concat(commands, ' ',3)
-            local roll = rolls:with('job',commands[3]) or rolls:with('en',commands[3])
+            for x = 3, #commands do commands[x] = commands[x]:ucfirst() end
+            commands[3] = table.concat(commands, ' ', 3)
+            local roll = rolls:with('job', commands[3]) or rolls:with('en', commands[3])
             if roll and not settings.roll:find(roll.en) then
                 settings.roll[commands[2]] = roll.en
-                print(roll.en,roll.bonus,roll.job and roll.job:upper())
+                print(roll.en, roll.bonus, roll.job and roll.job:upper())
             else
-                for k,v in pairs(rolls) do
+                for k, v in pairs(rolls) do
                     if v and not settings.roll:find(v.en) and v.en:startswith(commands[3]) then
                         settings.roll[commands[2]] = v.en
-                        print(v.en,v.bonus,v.job and v.job:upper())
+                        print(v.en, v.bonus, v.job and v.job:upper())
                     end
                 end
             end
@@ -268,12 +343,12 @@ windower.register_event('addon command', function(...)
             windower.add_to_chat(207, 'Will now ensure <%s> is in AoE range.':format(slot))
         else
             windower.add_to_chat(207, 'Ignoring slot <%s>':format(slot))
-        end    
+        end
     elseif commands[1] == 'save' then
         settings:save()
         windower.add_to_chat(207, 'Settings saved.')
     elseif commands[1] == 'eval' then
-        assert(loadstring(table.concat(commands, ' ',2)))()
+        assert(loadstring(table.concat(commands, ' ', 2)))()
     elseif commands[1] == 'flip' then
         settings.roll[1], settings.roll[2] = settings.roll[2], settings.roll[1]
         windower.add_to_chat(207, 'Roll 1 and Roll 2 have been flipped.')
@@ -287,63 +362,3 @@ function use_JA(str)
     del = 1.2
     windower.chat.input(str)
 end
-
-windower.register_event('incoming chunk', function(id,data,modified,is_injected,is_blocked)
-    if id == 0x028 then
-        if data:unpack('I', 6) ~= windower.ffxi.get_mob_by_target('me').id then return false end
-        local category, param = data:unpack( 'b4b16', 11, 3)
-        local recast, targ_id = data:unpack('b32b32', 15, 7)
-        local effect, message = data:unpack('b17b10', 27, 6)
-        if category == 6 then                       -- Use Job Ability
-            if message == 420 then                  -- Phantom Roll
-                buffs[rolls[param].buff] = effect
-                buffs[308] = param
-            elseif message == 424 then              -- Double-Up
-                buffs[rolls[param].buff] = effect
-            elseif message == 426 then              -- Bust
-                buffs[rolls[param].buff] = nil
-                buffs[309] = param
-            end
-        elseif category == 4 then                   -- Finish Casting
-            del = 4.2
-            is_casting = false
-        elseif finish_act:contains(category) then   -- Finish Range/WS/Item Use
-            is_casting = false
-        elseif start_act:contains(category) then
-            del = category == 7 and recast or 1
-            if param == 24931 then                  -- Begin Casting/WS/Item/Range
-                is_casting = true
-            elseif param == 28787 then              -- Failed Casting/WS/Item/Range
-                is_casting = false
-            end
-        end
-    elseif id == 0x63 and data:byte(5) == 9 then
-        local set_buff = {}
-        for n=1,32 do
-            local buff = data:unpack('H', n*2+7)
-            if buff == 255 then break end
-            if (buff >= 308 and buff <= 339) or (buff == 600) then
-                set_buff[buff] = buffs[buff] and buffs[buff] or 11
-            else
-                set_buff[buff] = (set_buff[buff] or 0) + 1
-            end
-        end
-        buffs = set_buff
-    end
-end)
-
-function reset()
-    actions = false
-    is_casting = false
-    buffs = {}
-end
-
-function status_change(new,old)
-    --is_casting = false
-    if new > 1 and new < 4 then
-        reset()
-    end
-end
-
-windower.register_event('status change', status_change)
-windower.register_event('zone change','job change','logout', reset)
