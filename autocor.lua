@@ -258,6 +258,7 @@ function reset()
     actions = false
     is_casting = false
     buffs = {}
+    current_rolls = {}
 end
 
 function status_change(new, old)
